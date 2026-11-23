@@ -52,8 +52,10 @@ cubrid-ci-watch register 1234 --head "$HEAD_SHA" --suite shell --suite sql \
 cubrid-ci-watch register 1234 --head "$HEAD_SHA" --suite shell --suite sql \
   --triggered-at "$TRIGGERED_AT" --receipt "$COMMENT_URL" --run-id 123 --attempt 1
 
-# Run the shared poller (holds poll.lock)
+# Run the shared poller (default: 1/2/4/8/16m per-PR backoff, 48h deadline, 10s wakeup)
 cubrid-ci-watch poll
+cubrid-ci-watch poll --wakeup 10
+cubrid-ci-watch poll --interval 900       # fixed interval override
 cubrid-ci-watch poll --once
 cubrid-ci-watch poll --once --force
 
@@ -67,6 +69,26 @@ cubrid-ci-watch wait 87 --after 100 --until terminal --timeout 3600
 cubrid-ci-watch prune --older-than 30d
 cubrid-ci-watch prune --older-than 30d --keep 10 --yes
 ```
+
+## Background Poller Service (Linux / systemd)
+
+Run the poller as a `systemd --user` service (`~/.config/systemd/user/cubrid-ci-watch.service`). Prerequisites: authenticated `gh` (`gh auth login`), `cubrid-pr-status`, `gh-pr-info` on `PATH`, and user linger (`loginctl enable-linger $USER`) if using `autostart enable`.
+
+```sh
+just install   # install or refresh cubrid-ci-watch via uv
+just setup     # write and verify systemd unit (--wakeup 10, per-PR 1/2/4/8/16m backoff)
+just doctor    # verify CLI, snapshot provider, gh auth, gh-pr-info, and unit
+just up        # start cubrid-ci-watch.service
+just status    # inspect service state and active tracked requests
+just logs      # follow journalctl logs
+just down      # stop cubrid-ci-watch.service
+just restart   # restart cubrid-ci-watch.service
+just serve     # run poller in the foreground
+just autostart enable   # enable boot autostart (requires user linger)
+just autostart disable  # disable boot autostart without stopping now
+```
+
+Ledger state lives in `$XDG_STATE_HOME/cubrid-ci-watch` (`~/.local/state/cubrid-ci-watch/watch.sqlite3`).
 
 ## State & Compatibility
 

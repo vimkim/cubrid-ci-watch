@@ -12,14 +12,16 @@ import time
 from .model import (
     BASE,
     CONTEXTS,
-    DELAY_SECONDS,
     DEADLINE_SECONDS,
+    DEFAULT_WAKEUP_SECONDS,
+    DELAY_SECONDS,
     FAILURES,
     MEANINGFUL_EVENTS,
     NO_VERDICT,
     REPO,
     TERMINAL,
     TERMINAL_EVENTS,
+    compute_poll_interval,
     encode,
     hydrate_event,
     now,
@@ -268,7 +270,7 @@ def collect(row) -> dict:
     return {"contexts": observations}
 
 
-def poll_one(db, row, interval: int) -> bool:
+def poll_one(db, row, interval: int | None) -> bool:
     try:
         observation = collect(row)
         error = None
@@ -281,10 +283,11 @@ def poll_one(db, row, interval: int) -> bool:
         fresh = db.execute("SELECT * FROM requests WHERE id=?", (row["id"],)).fetchone()
         if fresh["revision"] != row["revision"] or fresh["phase"] != "active":
             return False
+        step = compute_poll_interval(row["triggered"], current, interval)
         next_poll = (
-            min(current + interval, row["triggered"] + DEADLINE_SECONDS)
+            min(current + step, row["triggered"] + DEADLINE_SECONDS)
             if current < row["triggered"] + DEADLINE_SECONDS
-            else current + interval
+            else current + step
         )
         db.execute(
             "UPDATE requests SET next_poll=?, last_error=? WHERE id=?",
@@ -375,11 +378,12 @@ def poll_loop(
     *,
     once: bool,
     force: bool,
-    interval: int,
+    interval: int | None = None,
+    wakeup: int = DEFAULT_WAKEUP_SECONDS,
     on_events=None,
 ) -> int:
-    if interval <= 0 or (force and not once):
-        raise ValueError("--interval must be positive; --force requires --once")
+    if (interval is not None and interval <= 0) or wakeup <= 0 or (force and not once):
+        raise ValueError("--interval and --wakeup must be positive; --force requires --once")
     with open(state_dir / "poll.lock", "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -400,7 +404,8 @@ def poll_loop(
                     on_events(new_events)
             if once:
                 return 2 if errors else 0
-            time.sleep(min(interval, 10))
+            sleep_for = min(interval, wakeup) if interval is not None else wakeup
+            time.sleep(sleep_for)
 
 
 def wait_for_events(
@@ -410,10 +415,10 @@ def wait_for_events(
     request_id: int,
     after: int,
     until: str,
-    interval: int,
-    timeout: int,
+    interval: int | None = None,
+    timeout: int = 0,
 ) -> tuple[int, list[dict], str | None]:
-    if request_id <= 0 or after < 0 or interval <= 0 or timeout < 0:
+    if request_id <= 0 or after < 0 or (interval is not None and interval <= 0) or timeout < 0:
         raise ValueError(
             "wait requires positive request_id and --interval, and nonnegative --after and --timeout"
         )
@@ -459,7 +464,7 @@ def wait_for_events(
                         poll_one(db, fresh, interval)
                         checkpoint_wal(db, "PASSIVE")
                         continue
-        sleep_for = min(interval, 5)
+        sleep_for = min(interval, 5) if interval is not None else 5
         if deadline is not None:
             sleep_for = min(sleep_for, max(0.0, deadline - time.monotonic()))
         if sleep_for > 0:

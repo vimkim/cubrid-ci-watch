@@ -34,6 +34,23 @@ TERMINAL_EVENTS = {"complete", "head_changed", "superseded", "deadline"}
 
 DELAY_SECONDS = 86400
 DEADLINE_SECONDS = 172800
+BACKOFF_STEPS_SECONDS = (60, 120, 240, 480, 960)
+DEFAULT_WAKEUP_SECONDS = 10
+
+
+def compute_poll_interval(
+    triggered: float, current: float, interval: int | None
+) -> int:
+    """Return next poll interval in seconds: fixed if given, else 1/2/4/8/16m backoff."""
+    if interval is not None:
+        return interval
+    elapsed = max(0.0, current - triggered)
+    threshold = 0
+    for step in BACKOFF_STEPS_SECONDS[:-1]:
+        threshold += step
+        if elapsed < threshold:
+            return step
+    return BACKOFF_STEPS_SECONDS[-1]
 
 _DURATION_UNITS = {
     "s": 1,

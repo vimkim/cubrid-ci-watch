@@ -15,7 +15,7 @@ from .format import (
     render_status_plain,
     resolve_color,
 )
-from .model import encode, parse_duration, parse_pr_number
+from .model import DEFAULT_WAKEUP_SECONDS, encode, parse_duration, parse_pr_number
 from .store import (
     connect,
     count_events_for_request,
@@ -142,8 +142,14 @@ exit codes:
     poll_p.add_argument(
         "--interval",
         type=int,
-        default=900,
-        help="poll interval in seconds (default: 900)",
+        default=None,
+        help="fixed poll interval in seconds (default: per-PR 1/2/4/8/16m backoff)",
+    )
+    poll_p.add_argument(
+        "--wakeup",
+        type=int,
+        default=DEFAULT_WAKEUP_SECONDS,
+        help="poller wakeup check interval in seconds (default: 10)",
     )
 
     status_p = sub.add_parser(
@@ -245,8 +251,8 @@ exit codes:
     wait_p.add_argument(
         "--interval",
         type=int,
-        default=900,
-        help="fallback poll interval in seconds when no poller holds poll.lock (default: 900)",
+        default=None,
+        help="fixed fallback poll interval in seconds when no poller holds poll.lock (default: per-PR 1/2/4/8/16m backoff)",
     )
     wait_p.add_argument(
         "--timeout",
@@ -449,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
                 once=args.once,
                 force=args.force,
                 interval=args.interval,
+                wakeup=args.wakeup,
                 on_events=lambda evs: [print(encode(ev), flush=True) for ev in evs],
             )
         if args.command in ("status", "ls"):
