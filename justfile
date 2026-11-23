@@ -34,3 +34,7 @@ doctor:
     @command -v cubrid-ci-watch
     @cubrid-ci-watch --version
     @PYTHONPATH=src python3 -c 'from cubrid_ci_watch.collector import resolve_snapshot_executable; print("snapshot:", resolve_snapshot_executable())'
+
+# Show poller status and tracked CI requests (forwards extra flags to `status`).
+status *args:
+    @PYTHONPATH=src python3 -m cubrid_ci_watch status {{args}}

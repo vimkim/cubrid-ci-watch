@@ -15,6 +15,7 @@ Install or refresh the global `cubrid-ci-watch` command with `just` and `uv`:
 ```sh
 just install   # alias for `just sync` (used by daily-update-cubrid)
 just doctor    # verify installed binary path and snapshot provider
+just status    # show poller status and active tracked requests (passes extra flags)
 ```
 
 For local development where edits take effect immediately:
