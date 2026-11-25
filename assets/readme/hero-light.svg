@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 512" width="1200" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">cubrid-ci-watch architecture (light)</title>
+  <desc id="desc">Single-responsibility read-only pipeline: GitHub Actions gha-ci, cubrid-pr-status, and caller receipts feed a local SQLite ledger (watch.sqlite3) managed by a systemd user poller, emitting a JSONL v1 event stream and blocking wait gates while never triggering, cancelling, rerunning CI, or sending notifications.</desc>
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    </style>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#0969da"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#1a7f37"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1200" height="512" rx="14" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+
+  <!-- Header Band -->
+  <text x="36" y="45" class="mono" font-size="22" font-weight="700" fill="#1f2328">cubrid-ci-watch</text>
+  <text x="36" y="68" class="sans" font-size="13" fill="#656d76">Single-responsibility read-only CI observation ledger &amp; JSONL event stream</text>
+
+  <!-- Header Pills -->
+  <rect x="780" y="30" width="146" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+  <text x="853" y="48" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#656d76">Python 3.10+ stdlib</text>
+
+  <rect x="936" y="30" width="90" height="28" rx="14" fill="#fff8c5" stroke="#d4a72c" stroke-width="1"/>
+  <text x="981" y="48" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#9a6700">poll.lock</text>
+
+  <rect x="1036" y="30" width="128" height="28" rx="14" fill="#ddf4ff" stroke="#54aeff" stroke-width="1"/>
+  <text x="1100" y="48" text-anchor="middle" class="mono" font-size="11.5" font-weight="600" fill="#0969da">SQLite + JSONL</text>
+
+  <line x1="36" y1="86" x2="1164" y2="86" stroke="#eaeef2" stroke-width="1.5"/>
+
+  <!-- Column Headers -->
+  <text x="36" y="112" class="sans" font-size="11" font-weight="700" letter-spacing="0.9" fill="#656d76">1. READ-ONLY UPSTREAM SOURCES</text>
+  <text x="378" y="112" class="sans" font-size="11" font-weight="700" letter-spacing="0.9" fill="#0969da">2. LOCAL SQLITE LEDGER &amp; POLLER</text>
+  <text x="906" y="112" class="sans" font-size="11" font-weight="700" letter-spacing="0.9" fill="#1a7f37">3. EVENT STREAM &amp; CONSUMERS</text>
+
+  <!-- Column 1: Upstream Sources (x=36..294, w=258) -->
+  <!-- Card 1: GitHub Actions -->
+  <rect x="36" y="126" width="258" height="88" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.25"/>
+  <circle cx="54" cy="148" r="4.5" fill="#0969da"/>
+  <text x="66" y="152" class="sans" font-size="13.5" font-weight="700" fill="#1f2328">GitHub Actions (gha-ci)</text>
+  <text x="50" y="176" class="mono" font-size="11" fill="#656d76">gh metadata &amp; run/attempt</text>
+  <text x="50" y="196" class="mono" font-size="11" fill="#0969da">gh pr checks --required</text>
+
+  <!-- Card 2: cubrid-pr-status -->
+  <rect x="36" y="228" width="258" height="88" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.25"/>
+  <circle cx="54" cy="250" r="4.5" fill="#0969da"/>
+  <text x="66" y="254" class="mono" font-size="13" font-weight="700" fill="#1f2328">cubrid-pr-status</text>
+  <text x="50" y="278" class="mono" font-size="11" fill="#0969da">--json --history 0</text>
+  <text x="50" y="298" class="sans" font-size="11.5" fill="#656d76">Exact-commit context snapshot</text>
+
+  <!-- Card 3: Caller Receipt -->
+  <rect x="36" y="330" width="258" height="88" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.25"/>
+  <circle cx="54" cy="352" r="4.5" fill="#8250df"/>
+  <text x="66" y="356" class="sans" font-size="13.5" font-weight="700" fill="#1f2328">Caller Receipt</text>
+  <text x="50" y="380" class="mono" font-size="11" fill="#8250df">register --head --receipt</text>
+  <text x="50" y="400" class="sans" font-size="11.5" fill="#656d76">Idempotent PR/SHA tracking</text>
+
+  <!-- Connector 1 -> 2 (x=294..378) -->
+  <path d="M 294 170 L 310 170 L 310 374 L 294 374" fill="none" stroke="#d0d7de" stroke-width="1.75"/>
+  <line x1="294" y1="272" x2="371" y2="272" stroke="#0969da" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <rect x="315" y="236" width="58" height="22" rx="6" fill="#ddf4ff" stroke="#54aeff" stroke-width="1"/>
+  <text x="344" y="251" text-anchor="middle" class="mono" font-size="10" font-weight="600" fill="#0969da">read-only</text>
+
+  <!-- Column 2: Local SQLite Ledger & Poller (x=378..822, w=444, y=126..418, h=292) -->
+  <rect x="378" y="126" width="444" height="292" rx="12" fill="#f6f8fa" stroke="#54aeff" stroke-width="1.5"/>
+
+  <!-- Ledger Header -->
+  <text x="396" y="152" class="mono" font-size="15" font-weight="700" fill="#1f2328">watch.sqlite3</text>
+  <text x="396" y="168" class="mono" font-size="10.5" fill="#656d76">$XDG_STATE_HOME/cubrid-ci-watch</text>
+  <rect x="688" y="138" width="118" height="24" rx="6" fill="#ddf4ff" stroke="#54aeff" stroke-width="1"/>
+  <text x="747" y="154" text-anchor="middle" class="mono" font-size="11" font-weight="600" fill="#0969da">systemd --user</text>
+
+  <!-- Poller Strip -->
+  <rect x="394" y="180" width="412" height="28" rx="6" fill="#fff8c5" stroke="#d4a72c" stroke-width="1"/>
+  <text x="600" y="198" text-anchor="middle" class="mono" font-size="10.2" font-weight="600" fill="#9a6700">poll.lock  ·  1/2/4/8/16m backoff  ·  10s wakeup  ·  48h deadline</text>
+
+  <!-- Inner Card: requests table (x=394..594, w=200) -->
+  <rect x="394" y="218" width="200" height="114" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+  <text x="408" y="239" class="mono" font-size="12" font-weight="700" fill="#1f2328">requests</text>
+  <rect x="530" y="225" width="52" height="18" rx="4" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+  <text x="556" y="238" text-anchor="middle" class="mono" font-size="9.5" fill="#656d76">state</text>
+  <line x1="406" y1="249" x2="582" y2="249" stroke="#eaeef2" stroke-width="1"/>
+  <text x="408" y="268" class="mono" font-size="10.2" fill="#656d76">PR · head SHA · receipt</text>
+  <text x="408" y="287" class="mono" font-size="10.2" fill="#656d76">run_id / attempt bind</text>
+  <text x="408" y="306" class="mono" font-size="10.2" fill="#656d76">suites &amp; next_poll</text>
+  <text x="408" y="324" class="mono" font-size="10" fill="#0969da">outcome + required_outcome</text>
+
+  <!-- Inner Card: events table (x=606..806, w=200) -->
+  <rect x="606" y="218" width="200" height="114" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+  <text x="620" y="239" class="mono" font-size="12" font-weight="700" fill="#1f2328">events</text>
+  <rect x="734" y="225" width="60" height="18" rx="4" fill="#dafbe1" stroke="#4ac26b" stroke-width="1"/>
+  <text x="764" y="238" text-anchor="middle" class="mono" font-size="9.5" font-weight="600" fill="#1a7f37">append</text>
+  <line x1="618" y1="249" x2="794" y2="249" stroke="#eaeef2" stroke-width="1"/>
+  <text x="620" y="268" class="mono" font-size="10.2" font-weight="600" fill="#1a7f37">required_complete</text>
+  <text x="620" y="287" class="mono" font-size="10.2" fill="#1f2328">complete · failure</text>
+  <text x="620" y="306" class="mono" font-size="10.2" fill="#656d76">no_verdict · delay</text>
+  <text x="620" y="324" class="mono" font-size="10.2" fill="#656d76">head_changed · deadline</text>
+
+  <!-- Gate Footer Bar inside Ledger (x=394..806, w=412) -->
+  <rect x="394" y="342" width="412" height="62" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+  <text x="408" y="364" class="sans" font-size="11" font-weight="700" fill="#1a7f37">Required:</text>
+  <text x="466" y="364" class="mono" font-size="10.2" fill="#1f2328">build (release), test_shell, test_sql, test_medium</text>
+  <text x="408" y="388" class="sans" font-size="11" font-weight="700" fill="#656d76">Optional:</text>
+  <text x="466" y="388" class="mono" font-size="10.2" fill="#656d76">test_sql_by_cci (non-blocking for required)</text>
+
+  <!-- Connector 2 -> 3 (x=822..906) -->
+  <line x1="822" y1="272" x2="899" y2="272" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <path d="M 884 272 L 884 163 L 899 163" fill="none" stroke="#1a7f37" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+  <path d="M 884 272 L 884 335 L 899 335" fill="none" stroke="#1a7f37" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+  <rect x="826" y="236" width="54" height="22" rx="6" fill="#dafbe1" stroke="#4ac26b" stroke-width="1"/>
+  <text x="853" y="251" text-anchor="middle" class="mono" font-size="10" font-weight="600" fill="#1a7f37">JSONL v1</text>
+
+  <!-- Column 3: Event Stream & Consumers (x=906..1164, w=258) -->
+  <!-- Card 1: events -->
+  <rect x="906" y="126" width="258" height="74" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.25"/>
+  <circle cx="923" cy="148" r="4.5" fill="#1a7f37"/>
+  <text x="935" y="152" class="mono" font-size="12" font-weight="700" fill="#1f2328">events --after &lt;id&gt;</text>
+  <text x="919" y="177" class="sans" font-size="11.5" fill="#656d76">Idempotent JSONL event replay</text>
+
+  <!-- Card 2: wait -->
+  <rect x="906" y="212" width="258" height="78" rx="10" fill="#dafbe1" stroke="#4ac26b" stroke-width="1.4"/>
+  <circle cx="923" cy="235" r="4.5" fill="#1a7f37"/>
+  <text x="935" y="239" class="mono" font-size="11" font-weight="700" fill="#1a7f37">wait --until required|terminal</text>
+  <text x="919" y="264" class="sans" font-size="11.5" fill="#1f2328">Blocking gate for agents &amp; shells</text>
+
+  <!-- Card 3: status / show -->
+  <rect x="906" y="302" width="258" height="66" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1.25"/>
+  <circle cx="923" cy="323" r="4.5" fill="#0969da"/>
+  <text x="935" y="327" class="mono" font-size="11.5" font-weight="700" fill="#1f2328">status --json  /  show &lt;id&gt;</text>
+  <text x="919" y="350" class="sans" font-size="11.5" fill="#656d76">Schema v1 snapshot &amp; event audit</text>
+
+  <!-- Downstream Consumers Strip -->
+  <rect x="906" y="380" width="258" height="38" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+  <text x="1035" y="403" text-anchor="middle" class="sans" font-size="11.8" font-weight="600" fill="#1f2328">AI Agents · Orchestrators · Notifiers</text>
+
+  <!-- Bottom Guardrail Banner (y=438..490) -->
+  <rect x="36" y="438" width="1128" height="52" rx="10" fill="#ffebe9" stroke="#ff8182" stroke-width="1.25"/>
+
+  <rect x="52" y="451" width="166" height="26" rx="6" fill="#cf222e"/>
+  <text x="135" y="468" text-anchor="middle" class="mono" font-size="11" font-weight="700" fill="#ffffff">STRICT BOUNDARY</text>
+
+  <text x="238" y="468" class="sans" font-size="12.5" font-weight="600" fill="#656d76">This watcher NEVER:</text>
+
+  <rect x="386" y="451" width="150" height="26" rx="6" fill="#ffffff" stroke="#ff8182" stroke-width="1"/>
+  <text x="461" y="468" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#cf222e">✕  <tspan fill="#1f2328">Triggers CI</tspan></text>
+
+  <rect x="552" y="451" width="162" height="26" rx="6" fill="#ffffff" stroke="#ff8182" stroke-width="1"/>
+  <text x="633" y="468" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#cf222e">✕  <tspan fill="#1f2328">Cancels runs</tspan></text>
+
+  <rect x="730" y="451" width="156" height="26" rx="6" fill="#ffffff" stroke="#ff8182" stroke-width="1"/>
+  <text x="808" y="468" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#cf222e">✕  <tspan fill="#1f2328">Reruns jobs</tspan></text>
+
+  <rect x="902" y="451" width="244" height="26" rx="6" fill="#ffffff" stroke="#ff8182" stroke-width="1"/>
+  <text x="1024" y="468" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#cf222e">✕  <tspan fill="#1f2328">Sends notifications</tspan></text>
+</svg>
