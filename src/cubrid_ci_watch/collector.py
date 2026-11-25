@@ -19,6 +19,8 @@ from .model import (
     MEANINGFUL_EVENTS,
     NO_VERDICT,
     REPO,
+    REQUIRED_TERMINAL_EVENTS,
+    STABLE_REQUIRED_CONTEXTS,
     TERMINAL,
     TERMINAL_EVENTS,
     compute_poll_interval,
@@ -105,6 +107,87 @@ def published_by(
     )
 
 
+def get_live_required_contexts(pr_number: int) -> frozenset[str] | None:
+    """Query `gh pr checks --required` and return gha-ci context suffixes, or None on error."""
+    gh = os.environ.get("CUBRID_CI_WATCH_GH", "gh")
+    try:
+        proc = subprocess.run(
+            [
+                gh,
+                "pr",
+                "checks",
+                str(pr_number),
+                "--repo",
+                REPO,
+                "--required",
+                "--json",
+                "name",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode not in (0, 8):
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str)
+        for item in data
+    ):
+        return None
+    required: set[str] = set()
+    for item in data:
+        name = item["name"]
+        if name.startswith("gha-ci: "):
+            suffix = name[len("gha-ci: ") :]
+            if suffix in CONTEXTS:
+                required.add(suffix)
+    return frozenset(required)
+
+
+def _resolve_required_contexts(
+    row, *, allow_live: bool
+) -> tuple[frozenset[str], str, list[str] | None]:
+    """Resolve effective required contexts from live gh checks, cached live set, or stable contract."""
+    prev_live: frozenset[str] | None = None
+    raw_obs = row["observation"] if "observation" in row.keys() else None
+    if isinstance(raw_obs, str) and raw_obs:
+        try:
+            prev_obs = json.loads(raw_obs)
+        except json.JSONDecodeError:
+            prev_obs = None
+        if isinstance(prev_obs, dict) and isinstance(prev_obs.get("live_required"), list):
+            prev_live = frozenset(
+                name
+                for name in prev_obs["live_required"]
+                if isinstance(name, str) and name in CONTEXTS
+            )
+
+    if allow_live:
+        live = get_live_required_contexts(row["pr"])
+        if live is not None:
+            return STABLE_REQUIRED_CONTEXTS | live, "live+stable", sorted(live)
+
+    if prev_live is not None:
+        return STABLE_REQUIRED_CONTEXTS | prev_live, "cached+stable", sorted(prev_live)
+
+    return STABLE_REQUIRED_CONTEXTS, "stable", None
+
+
+def _summarize_outcome(contexts: dict) -> str:
+    if any(r["state"] in FAILURES for r in contexts.values()):
+        return "failure"
+    if any(r["state"] in NO_VERDICT for r in contexts.values()):
+        return "no_verdict"
+    return "success"
+
+
 def collect(row) -> dict:
     target = f"{BASE}/pull/{row['pr']}"
     executable = resolve_snapshot_executable()
@@ -184,7 +267,19 @@ def collect(row) -> dict:
         for name in selected
     }
     if row["run_id"] is None:
-        return {"contexts": observations, "candidates": sorted(candidates)}
+        effective_required, required_source, live_required = _resolve_required_contexts(
+            row, allow_live=False
+        )
+        for name, entry in observations.items():
+            entry["required"] = name in effective_required
+        result: dict = {
+            "contexts": observations,
+            "candidates": sorted(candidates),
+            "required_source": required_source,
+        }
+        if live_required is not None:
+            result["live_required"] = live_required
+        return result
 
     run = get_run(row["run_id"])
     if run["run_attempt"] != row["attempt"]:
@@ -267,7 +362,15 @@ def collect(row) -> dict:
             ):
                 observations[name]["attributed"] = True
                 observations[name]["reason"] = None
-    return {"contexts": observations}
+    effective_required, required_source, live_required = _resolve_required_contexts(
+        row, allow_live=True
+    )
+    for name, entry in observations.items():
+        entry["required"] = name in effective_required
+    result = {"contexts": observations, "required_source": required_source}
+    if live_required is not None:
+        result["live_required"] = live_required
+    return result
 
 
 def poll_one(db, row, interval: int | None) -> bool:
@@ -325,6 +428,9 @@ def poll_one(db, row, interval: int | None) -> bool:
                 return False
             contexts = observation["contexts"]
             for name, result in contexts.items():
+                is_required = bool(
+                    result.get("required", name in STABLE_REQUIRED_CONTEXTS)
+                )
                 if result["attributed"] and result["state"] in FAILURES:
                     insert_event(
                         db,
@@ -332,7 +438,11 @@ def poll_one(db, row, interval: int | None) -> bool:
                         "failure:" + name,
                         "failure",
                         current,
-                        {"context": name, "state": result["state"]},
+                        {
+                            "context": name,
+                            "state": result["state"],
+                            "required": is_required,
+                        },
                     )
                 if result["attributed"] and result["state"] in NO_VERDICT:
                     insert_event(
@@ -341,24 +451,59 @@ def poll_one(db, row, interval: int | None) -> bool:
                         "no_verdict:" + name,
                         "no_verdict",
                         current,
-                        {"context": name, "state": result["state"]},
+                        {
+                            "context": name,
+                            "state": result["state"],
+                            "required": is_required,
+                        },
                     )
-            if all(r["attributed"] and r["state"] in TERMINAL for r in contexts.values()):
-                outcome = (
-                    "failure"
-                    if any(r["state"] in FAILURES for r in contexts.values())
-                    else "no_verdict"
-                    if any(r["state"] in NO_VERDICT for r in contexts.values())
-                    else "success"
-                )
+            required_contexts = {
+                name: r
+                for name, r in contexts.items()
+                if r.get("required", name in STABLE_REQUIRED_CONTEXTS)
+            }
+            all_complete = all(
+                r["attributed"] and r["state"] in TERMINAL for r in contexts.values()
+            )
+            req_complete = bool(required_contexts) and all(
+                r["attributed"] and r["state"] in TERMINAL
+                for r in required_contexts.values()
+            )
+            if all_complete:
+                outcome = _summarize_outcome(contexts)
+                complete_payload: dict = {"outcome": outcome}
+                if required_contexts:
+                    complete_payload["required_outcome"] = _summarize_outcome(
+                        required_contexts
+                    )
+                    complete_payload["required_contexts"] = sorted(required_contexts)
+                    complete_payload["required_source"] = observation.get(
+                        "required_source", "stable"
+                    )
                 insert_event(
-                    db, row["id"], "complete", "complete", current, {"outcome": outcome}
+                    db, row["id"], "complete", "complete", current, complete_payload
                 )
                 db.execute(
                     "UPDATE requests SET phase=?, outcome=? WHERE id=?",
                     ("closed", outcome, row["id"]),
                 )
                 return False
+            if req_complete:
+                req_outcome = _summarize_outcome(required_contexts)
+                insert_event(
+                    db,
+                    row["id"],
+                    "required_complete",
+                    "required_complete",
+                    current,
+                    {
+                        "outcome": req_outcome,
+                        "required_contexts": sorted(required_contexts),
+                        "required_source": observation.get(
+                            "required_source", "stable"
+                        ),
+                    },
+                )
         if current >= row["triggered"] + DELAY_SECONDS:
             insert_event(db, row["id"], "delay", "delay", current, {})
         if current >= row["triggered"] + DEADLINE_SECONDS:
@@ -425,7 +570,14 @@ def wait_for_events(
     if not db.execute("SELECT 1 FROM requests WHERE id=?", (request_id,)).fetchone():
         raise ValueError(f"unknown request {request_id}")
 
-    wanted = MEANINGFUL_EVENTS if until == "meaningful" else TERMINAL_EVENTS
+    if until == "meaningful":
+        wanted = MEANINGFUL_EVENTS
+    elif until == "terminal":
+        wanted = TERMINAL_EVENTS
+    elif until == "required":
+        wanted = REQUIRED_TERMINAL_EVENTS
+    else:
+        raise ValueError(f"unsupported --until value: {until}")
     deadline = time.monotonic() + timeout if timeout > 0 else None
     while True:
         rows = db.execute(
@@ -444,6 +596,18 @@ def wait_for_events(
                 [],
                 f"cubrid-ci-watch: request #{request_id} is already closed (outcome={req['outcome']})",
             )
+        if until == "required":
+            prior = db.execute(
+                "SELECT payload FROM events WHERE request_id=? AND kind='required_complete' ORDER BY id DESC LIMIT 1",
+                (request_id,),
+            ).fetchone()
+            if prior is not None:
+                prior_outcome = json.loads(prior["payload"]).get("outcome", "unknown")
+                return (
+                    0,
+                    [],
+                    f"cubrid-ci-watch: request #{request_id} required contexts are already complete (outcome={prior_outcome})",
+                )
         if deadline is not None and time.monotonic() >= deadline:
             return (
                 3,

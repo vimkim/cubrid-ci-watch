@@ -20,6 +20,7 @@ from .store import (
     connect,
     count_events_for_request,
     default_state_dir,
+    drop_request_suites,
     get_request,
     inspect_poller,
     prune_requests,
@@ -74,12 +75,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     epilog = """examples:
-  cubrid-ci-watch status                    # active requests + poller status
-  cubrid-ci-watch status --recent 10        # 10 most recent requests
-  cubrid-ci-watch show 87                   # inspect one request and its events
-  cubrid-ci-watch poll                      # run shared background poller
-  cubrid-ci-watch wait 87 --after 300       # block until next meaningful event
-  cubrid-ci-watch prune --older-than 30d    # preview closed requests to prune
+  cubrid-ci-watch status                               # active requests + poller status
+  cubrid-ci-watch status --recent 10                   # 10 most recent requests
+  cubrid-ci-watch show 87                              # inspect one request and its events
+  cubrid-ci-watch poll                                 # run shared background poller
+  cubrid-ci-watch wait 87 --after 300                  # block until next meaningful event
+  cubrid-ci-watch wait 87 --after 300 --until required # block until required contexts finish
+  cubrid-ci-watch prune --older-than 30d               # preview closed requests to prune
 
 exit codes:
   0  command succeeded (or wait observed a matching event / closed request)
@@ -109,8 +111,13 @@ exit codes:
     reg.add_argument(
         "--suite",
         action="append",
-        required=True,
+        default=[],
         help="suite to track (shell, sql, medium, sql_by_cci); repeatable",
+    )
+    reg.add_argument(
+        "--required-only",
+        action="store_true",
+        help="track only required suites (shell, sql, medium); excludes optional suites such as sql_by_cci",
     )
     reg.add_argument(
         "--triggered-at", required=True, help="ISO8601 trigger time with timezone"
@@ -232,8 +239,8 @@ exit codes:
     wait_p = sub.add_parser(
         "wait",
         parents=[common],
-        help="block until a meaningful or terminal event commits for one request",
-        description="Wait for a meaningful or terminal event for one request, cooperating with poll.lock.",
+        help="block until a meaningful, required-complete, or terminal event commits",
+        description="Wait for a meaningful, required-only completion, or terminal event for one request, cooperating with poll.lock.",
     )
     wait_p.add_argument("request_id", type=int, help="registered request ID")
     wait_p.add_argument(
@@ -244,9 +251,9 @@ exit codes:
     )
     wait_p.add_argument(
         "--until",
-        choices=["meaningful", "terminal"],
+        choices=["meaningful", "terminal", "required"],
         default="meaningful",
-        help="event class that wakes the wait (default: meaningful)",
+        help="event class that wakes the wait: meaningful (default), required (all required contexts terminal), or terminal (request closed)",
     )
     wait_p.add_argument(
         "--interval",
@@ -259,6 +266,20 @@ exit codes:
         type=int,
         default=0,
         help="seconds before exiting 3; 0 waits until event or closure (default: 0)",
+    )
+
+    drop_p = sub.add_parser(
+        "drop-suite",
+        parents=[common],
+        help="remove suite(s) from an active request",
+        description="Drop one or more tracked suites (for example optional sql_by_cci) from an active request so they no longer gate completion.",
+    )
+    drop_p.add_argument("request_id", type=_positive_int, help="active request ID")
+    drop_p.add_argument(
+        "--suite",
+        action="append",
+        required=True,
+        help="suite to remove (shell, sql, medium, sql_by_cci); repeatable",
     )
 
     prune_p = sub.add_parser(
@@ -445,8 +466,13 @@ def main(argv: list[str] | None = None) -> int:
                 kind=args.kind,
                 run_id=args.run_id,
                 attempt=args.attempt,
+                required_only=args.required_only,
             )
             print(encode({"schema_version": 1, "request_id": request_id}))
+            return 0
+        if args.command == "drop-suite":
+            result = drop_request_suites(db, args.request_id, args.suite)
+            print(encode({"schema_version": 1, **result}))
             return 0
         if args.command == "poll":
             return poll_loop(

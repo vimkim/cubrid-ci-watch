@@ -49,8 +49,13 @@ cubrid-ci-watch show 87 --json
 # Register a trigger receipt, then attach verified run/attempt binding
 cubrid-ci-watch register 1234 --head "$HEAD_SHA" --suite shell --suite sql \
   --triggered-at "$TRIGGERED_AT" --receipt "$COMMENT_URL"
+cubrid-ci-watch register 1234 --head "$HEAD_SHA" --required-only \
+  --triggered-at "$TRIGGERED_AT" --receipt "$COMMENT_URL"
 cubrid-ci-watch register 1234 --head "$HEAD_SHA" --suite shell --suite sql \
   --triggered-at "$TRIGGERED_AT" --receipt "$COMMENT_URL" --run-id 123 --attempt 1
+
+# Drop an optional suite from an active request so it no longer gates completion
+cubrid-ci-watch drop-suite 87 --suite sql_by_cci
 
 # Run the shared poller (default: 1/2/4/8/16m per-PR backoff, 48h deadline, 10s wakeup)
 cubrid-ci-watch poll
@@ -63,6 +68,7 @@ cubrid-ci-watch poll --once --force
 cubrid-ci-watch events --after 42
 cubrid-ci-watch events --request 87 --kind failure
 cubrid-ci-watch wait 87 --after 100
+cubrid-ci-watch wait 87 --after 100 --until required --timeout 3600
 cubrid-ci-watch wait 87 --after 100 --until terminal --timeout 3600
 
 # Preview or remove old closed requests (dry-run unless --yes is passed)
@@ -94,6 +100,7 @@ Ledger state lives in `$XDG_STATE_HOME/cubrid-ci-watch` (`~/.local/state/cubrid-
 
 - Default state directory: `$XDG_STATE_HOME/cubrid-ci-watch` (or `~/.local/state/cubrid-ci-watch`). Pass `--state-dir PATH` before or after the subcommand to override.
 - SQLite schema (`requests` and `events` tables in `watch.sqlite3`) and `poll.lock` semantics are preserved for `my-cubrid-hermes` and existing ledgers.
+- Required vs. optional contexts: `build (release)`, `test_shell`, `test_sql`, and `test_medium` form the stable required set, unioned with live `gh pr checks --required` when available (cached across transient errors). Optional contexts (such as `test_sql_by_cci`, and `build (debug)` when not in live required checks) do not block `required_complete` or `wait --until required`; `complete` still records both overall `outcome` and `required_outcome` once all tracked contexts finish.
 - `status --json` without explicit filters returns `{"schema_version": 1, "requests": [...]}` with all requests ordered by `id ASC` to preserve existing consumers. Human `status` (and `--plain`) defaults to `active` requests only, newest first.
 
 ## Exit Codes

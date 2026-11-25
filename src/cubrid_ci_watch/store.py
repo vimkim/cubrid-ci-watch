@@ -1,12 +1,15 @@
 """SQLite ledger persistence, query helpers, pruning, and lock inspection."""
 
 import fcntl
+import json
 import os
 from pathlib import Path
 import re
 import sqlite3
 
 from .model import (
+    OPTIONAL_SUITES,
+    REQUIRED_SUITES,
     SUITES,
     encode,
     hydrate_event,
@@ -111,13 +114,23 @@ def register_request(
     kind: str,
     run_id: int | None = None,
     attempt: int | None = None,
+    required_only: bool = False,
 ) -> int:
     if pr <= 0 or not re.fullmatch(r"[0-9a-fA-F]{40}", head):
         raise ValueError("PR must be positive and head must be a full 40-character SHA")
     if not receipt.strip():
         raise ValueError("receipt must not be empty")
     normalized_suites = sorted(set(s.removeprefix("test_") for s in suites))
-    if not normalized_suites or any(s not in SUITES for s in normalized_suites):
+    if any(s not in SUITES for s in normalized_suites):
+        raise ValueError("select shell, sql, medium, or sql_by_cci with --suite")
+    if required_only:
+        if not suites:
+            normalized_suites = sorted(REQUIRED_SUITES)
+        else:
+            normalized_suites = [s for s in normalized_suites if s not in OPTIONAL_SUITES]
+            if not normalized_suites:
+                raise ValueError("no required suites selected after excluding optional suites")
+    elif not normalized_suites:
         raise ValueError("select shell, sql, medium, or sql_by_cci with --suite")
     if (run_id is None) != (attempt is None) or (
         run_id is not None and (run_id <= 0 or attempt <= 0)
@@ -179,6 +192,49 @@ def register_request(
                 {"run_id": run_id, "attempt": attempt, "source": "caller"},
             )
         return request_id
+
+
+def drop_request_suites(
+    db: sqlite3.Connection, request_id: int, suites: list[str]
+) -> dict:
+    """Remove tracked suite(s) from an active request so they no longer gate completion."""
+    if request_id <= 0:
+        raise ValueError("request_id must be positive")
+    to_remove = sorted(set(s.removeprefix("test_") for s in suites))
+    if not to_remove or any(s not in SUITES for s in to_remove):
+        raise ValueError("select shell, sql, medium, or sql_by_cci with --suite")
+
+    db.execute("BEGIN IMMEDIATE")
+    with db:
+        row = db.execute(
+            "SELECT * FROM requests WHERE id=?", (request_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown request {request_id}")
+        if row["phase"] != "active":
+            raise ValueError("cannot modify a closed request")
+        current_suites = json.loads(row["suites"])
+        removed = [s for s in to_remove if s in current_suites]
+        remaining = [s for s in current_suites if s not in to_remove]
+        if not remaining:
+            raise ValueError("at least one suite must remain tracked")
+        if not removed:
+            return {"request_id": request_id, "suites": current_suites, "removed": []}
+        ts = now()
+        new_revision = row["revision"] + 1
+        db.execute(
+            "UPDATE requests SET suites=?, revision=?, next_poll=? WHERE id=?",
+            (encode(remaining), new_revision, ts, request_id),
+        )
+        insert_event(
+            db,
+            request_id,
+            f"suites_updated:{new_revision}",
+            "suites_updated",
+            ts,
+            {"removed": removed, "suites": remaining},
+        )
+        return {"request_id": request_id, "suites": remaining, "removed": removed}
 
 
 def request_counts(db: sqlite3.Connection) -> dict:

@@ -17,6 +17,11 @@ CONTEXTS = {
 }
 
 SUITES = ("shell", "sql", "medium", "sql_by_cci")
+REQUIRED_SUITES = ("shell", "sql", "medium")
+OPTIONAL_SUITES = ("sql_by_cci",)
+STABLE_REQUIRED_CONTEXTS = frozenset(
+    {"build (release)", "test_shell", "test_sql", "test_medium"}
+)
 FAILURES = {"FAILURE"}
 NO_VERDICT = {"ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 TERMINAL = FAILURES | NO_VERDICT | {"SUCCESS"}
@@ -24,6 +29,7 @@ MEANINGFUL_EVENTS = {
     "pickup_candidate",
     "failure",
     "no_verdict",
+    "required_complete",
     "complete",
     "head_changed",
     "superseded",
@@ -31,6 +37,7 @@ MEANINGFUL_EVENTS = {
     "deadline",
 }
 TERMINAL_EVENTS = {"complete", "head_changed", "superseded", "deadline"}
+REQUIRED_TERMINAL_EVENTS = {"required_complete"} | TERMINAL_EVENTS
 
 DELAY_SECONDS = 86400
 DEADLINE_SECONDS = 172800

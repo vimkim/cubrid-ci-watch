@@ -230,6 +230,8 @@ def render_status_human(
             if obs:
                 for name, result in obs.get("contexts", {}).items():
                     status = "attributed" if result["attributed"] else result["reason"]
+                    if result.get("required") is False:
+                        status += ", optional"
                     lines.append(
                         f"  {name}: {result['state'] or 'not observed'} ({status})"
                     )
@@ -296,6 +298,8 @@ def render_show_human(
     else:
         for name, result in obs.get("contexts", {}).items():
             detail = "attributed" if result["attributed"] else result["reason"]
+            if result.get("required") is False:
+                detail += ", optional"
             lines.append(
                 f"  {name:<18} {result['state'] or 'not observed':<12} ({detail})"
             )
@@ -316,7 +320,7 @@ def render_show_human(
     else:
         for ev in events:
             lines.append(
-                f"  #{ev['id']:<4} {ev['occurred_at']}  {ev['kind']:<16} {encode(ev['payload'])}"
+                f"  #{ev['id']:<4} {ev['occurred_at']}  {ev['kind']:<18} {encode(ev['payload'])}"
             )
     return "\n".join(lines)
 
